@@ -14,6 +14,7 @@ addons:
   apt:
     sources:
     - sourceline: 'ppa:ubuntu-lxc/stable'
+    - sourceline: 'ppa:wireguard/wireguard'
     packages:
     - python-pip
     - lxc
@@ -22,6 +23,8 @@ addons:
     - debootstrap
     - shellcheck
     - tree
+    - linux-headers-$(uname -r)
+    - wireguard-dkms
 
 cache:
   directories:
@@ -39,6 +42,7 @@ env:
   - LXC_NAME=docker LXC_DISTRO=ubuntu LXC_RELEASE=artful
 
 before_install:
+  - test "${LXC_NAME}" != "docker" && sudo modprobe wireguard
   - test "${LXC_NAME}" != "docker" || docker build -t travis/algo .
 
 install:
