@@ -13,7 +13,7 @@ matrix:
 addons:
   apt:
     sources:
-    # - sourceline: 'ppa:ubuntu-lxc/stable'
+    - sourceline: 'ppa:ubuntu-lxc/stable'
     - sourceline: 'ppa:wireguard/wireguard'
     packages:
     - python-pip
@@ -25,40 +25,49 @@ addons:
     - tree
     - linux-headers-$(uname -r)
     - wireguard-dkms
+    - wget
+    - build-essential
+    - libssl-dev
+    - libffi-dev
+    - python-dev
+    - cloud-utils
 
 cache:
-  directories:
-    - $HOME/lxc/
   pip: true
 
-before_cache:
-  - set -x
-  - mkdir $HOME/lxc
-  - sudo tar cf $HOME/lxc/cache.tar /var/cache/lxc/
-  - sudo chown $USER. $HOME/lxc/cache.tar
-
 env:
-  - LXC_NAME=ubuntu1604 LXC_DISTRO=ubuntu LXC_RELEASE=xenial
-  - LXC_NAME=ubuntu1710 LXC_DISTRO=ubuntu LXC_RELEASE=artful
-  - LXC_NAME=docker LXC_DISTRO=ubuntu LXC_RELEASE=artful
+  - NAME=qemu-artful RELEASE=artful
+  # - NAME=qemu-bionic RELEASE=bionic
+  # - NAME=docker RELEASE=bionic
 
 before_install:
-  - sudo -E apt-get -yq update &>> ~/apt-get-update.log
-  - sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install python-pip lxc lxc-templates expect-dev debootstrap shellcheck tree linux-headers-$(uname -r) wireguard-dkms
-  - test "${LXC_NAME}" != "docker" && sudo modprobe wireguard || docker build -t travis/algo .
+  - wget https://cloud-images.ubuntu.com/${RELEASE}/current/${RELEASE}-server-cloudimg-amd64.img -O /tmp/${RELEASE}.img
+  # - test "${LXC_NAME}" != "docker" || docker build -t travis/algo .
 
 install:
-  - sudo tar xf $HOME/lxc/cache.tar -C / || echo "Didn't extract cache."
-  - export LXC_ROOTFS=/var/lib/lxc/$LXC_NAME/rootfs
-  - 'sudo lxc-create -n $LXC_NAME -t ubuntu -- -r $LXC_RELEASE --mirror http://mirrors.us.kernel.org/ubuntu --packages python || true'
-  - 'sudo lxc-start -n $LXC_NAME && until (sudo lxc-info -n $LXC_NAME | grep -q ^IP:); do printf . && sleep 1; done && sleep 2'
-  - export LXC_IP="$(sudo lxc-info -Hin $LXC_NAME)"
-  - sudo /bin/bash -c "printf '\n$LXC_IP test.lxc\n' >> /etc/hosts"
   - ssh-keygen -f ~/.ssh/id_rsa -t rsa -N ''
-  - chmod 0644 ~/.ssh/config
-  - sudo mkdir -vm 0700 $LXC_ROOTFS/root/.ssh/
-  - sudo cp -v ~/.ssh/id_rsa.pub $LXC_ROOTFS/root/.ssh/authorized_keys
-  - sudo apt-get install build-essential libssl-dev libffi-dev python-dev
+  - |
+    cat > ~/cloud-init.yml << EOF
+    #cloud-config
+    users:
+      - defaults
+      - name: ubuntu
+        ssh-authorized-keys:
+          - $(cat ~/.ssh/id_rsa.pub)
+        sudo: ['ALL=(ALL) NOPASSWD:ALL']
+        groups: sudo
+        shell: /bin/bash
+    EOF
+  - cloud-localds --disk-format qcow2 /tmp/cloud-init.img ~/cloud-init.yml
+  - |
+    qemu-system-x86_64 \
+      -daemonize \
+      -nographic \
+      -display none \
+      /tmp/${RELEASE}.img \
+      -m 256 -smp 4 \
+      -net user,hostfwd=tcp::2222-:22 -net nic \
+      -device virtio-blk-pci,drive=cloud -drive if=none,id=cloud,file=/tmp/cloud-init.img,format=raw
   - pip install -r requirements.txt
   - pip install ansible-lint
   - gem install awesome_bot
@@ -67,8 +76,8 @@ install:
 
 script:
   # - awesome_bot --allow-dupe --skip-save-results *.md docs/*.md --white-list paypal.com,do.co,microsoft.com,https://github.com/trailofbits/algo/archive/master.zip,https://github.com/trailofbits/algo/issues/new
-#  - shellcheck algo
-#  - ansible-lint deploy.yml users.yml deploy_client.yml
+  # - shellcheck algo
+  # - ansible-lint deploy.yml users.yml deploy_client.yml
   - ansible-playbook deploy.yml --syntax-check
   - ./tests/local-deploy.sh
 
