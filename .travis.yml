@@ -2,7 +2,7 @@
 language: python
 python: "2.7"
 sudo: required
-dist: trusty
+dist: xenial
 
 services:
   - docker
@@ -13,7 +13,7 @@ matrix:
 addons:
   apt:
     sources:
-    - sourceline: 'ppa:ubuntu-lxc/stable'
+    # - sourceline: 'ppa:ubuntu-lxc/stable'
     - sourceline: 'ppa:wireguard/wireguard'
     packages:
     - python-pip
@@ -32,6 +32,7 @@ cache:
   pip: true
 
 before_cache:
+  - set -x
   - mkdir $HOME/lxc
   - sudo tar cf $HOME/lxc/cache.tar /var/cache/lxc/
   - sudo chown $USER. $HOME/lxc/cache.tar
@@ -42,8 +43,9 @@ env:
   - LXC_NAME=docker LXC_DISTRO=ubuntu LXC_RELEASE=artful
 
 before_install:
-  - test "${LXC_NAME}" != "docker" && sudo modprobe wireguard
-  - test "${LXC_NAME}" != "docker" || docker build -t travis/algo .
+  - sudo -E apt-get -yq update &>> ~/apt-get-update.log
+  - sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install python-pip lxc lxc-templates expect-dev debootstrap shellcheck tree linux-headers-$(uname -r) wireguard-dkms
+  - test "${LXC_NAME}" != "docker" && sudo modprobe wireguard || docker build -t travis/algo .
 
 install:
   - sudo tar xf $HOME/lxc/cache.tar -C / || echo "Didn't extract cache."
